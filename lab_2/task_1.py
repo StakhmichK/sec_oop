@@ -39,8 +39,15 @@ if __name__ == "__main__":
         # Отримання даних від користувача
         movie_title = input("Введіть назву фільму: ")
         movie_genre = input("Введіть жанр фільму: ")
-        raw_price = float(input("Введіть ціну квитка (грн): "))
-
+        raw_price_input = input("Введіть ціну квитка (грн): ")
+        # Пробуємо перетворити на число
+        try:
+            raw_price = float(raw_price_input)
+        except ValueError:
+            # Якщо це слово або некоректний символ — передаємо рядок як є, 
+            # щоб спрацювала валідація в сетері
+            raw_price = raw_price_input
+            
         # Створення екземплярів класів
         movie = Movie(title=movie_title, genre=movie_genre, duration_min=120)
         ticket = Ticket(movie=movie, price=raw_price)
