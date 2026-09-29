@@ -5,7 +5,6 @@ import uuid
 # 1. Використання dataclass для збереження даних про фільм
 @dataclass
 class Movie:
-    """Клас для зберігання інформації про фільм."""
     title: str
     genre: str
     duration_min: int
@@ -13,7 +12,6 @@ class Movie:
 
 # 2. Поведінковий клас з інкапсуляцією та валідацією
 class Ticket:
-    """Клас для квитка в кіно з валідацією ціни."""
     def __init__(self, movie: Movie, price: float):
         self.id = str(uuid.uuid4())[:8]
         self.movie = movie
@@ -22,12 +20,10 @@ class Ticket:
 
     @property
     def price(self) -> float:
-        """Гетер для отримання ціни квитка."""
         return self._price
 
     @price.setter
     def price(self, value: float) -> None:
-        """Сетер для встановлення ціни з перевіркою некоректних даних."""
         if not isinstance(value, (int, float)):
             raise ValueError("Ціна квитка повинна бути числом!")
         if value <= 0:
