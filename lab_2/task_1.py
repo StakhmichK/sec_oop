@@ -17,6 +17,7 @@ class Movie:
     title: str
     genre: str
     duration_min: int 
+    
 # 3. Поведінковий клас з інкапсуляцією та валідацією
 class Ticket:
     """Клас для квитка в кіно з валідацією ціни та місця."""
