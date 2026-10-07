@@ -17,7 +17,7 @@ class Movie:
     title: str
     genre: str
     duration_min: int 
-    
+
 # 3. Поведінковий клас з інкапсуляцією та валідацією
 class Ticket:
     """Клас для квитка в кіно з валідацією ціни та місця."""
@@ -118,8 +118,9 @@ if __name__ == "__main__":
 
         # Інспекція внутрішнього стану об'єкта
         print("\n--- Інспекція внутрішнього стану (vars) ---")
-        print(vars(my_ticket))
-
+        from pprint import pprint
+        pprint(vars(my_ticket))
+        
     except ValueError as e:
         # Перехоплення помилок валідації із сетерів та вводу
         print(f"\n[ПОМИЛКА ВАЛІДАЦІЇ] {e}")
