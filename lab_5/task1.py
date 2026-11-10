@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from itertools import islice
 from typing import Optional
 import time
 import uuid
@@ -51,6 +52,7 @@ GENRE_HALLS_MAP = {
 }
 
 BOOKING_TIMEOUT_SEC = 60
+SERVICE_FEE_RATE = 0.05
 
 
 # 3. Базовий клас
@@ -192,26 +194,29 @@ class TicketBookingContext:
         return False
 
 
-# --- 7. Нові компоненти для Лабораторної №5 ---
-
+# 6. Функтор (бізнес-логіка зі станом)
 class TicketPricingFunctor:
-    """Функтор для розрахунку додаткового сервісного збору зі збереженням стану (лічильника викликів)."""
-    def __init__(self, service_fee: float = 30.0):
-        self.service_fee = service_fee
-        self.usage_count = 0  # Внутрішній стан (історія викликів)
+    """Нараховує сервісний збір до квитка та запам'ятовує, скільки зборів уже стягнуто."""
+    def __init__(self, fee_rate: float):
+        self.fee_rate = fee_rate
+        self.calls_count = 0
+        self.total_fees = 0.0
 
-    def __call__(self, base_price: float) -> float:
-        self.usage_count += 1
-        return base_price + self.service_fee
+    def __call__(self, ticket: Ticket) -> float:
+        fee = ticket.calculate_final_price() * self.fee_rate
+        self.calls_count += 1
+        self.total_fees += fee
+        return ticket + fee
 
+
+# 7. Кастомний ітератор (фільтрація за статусом)
 class PaidTicketIterator:
-    """Кастомний ітератор для ручного обходу та фільтрації: повертає лише оплачені квитки (PAID)."""
+    """Пропускає всі квитки, крім оплачених."""
     def __init__(self, tickets: list[Ticket]):
         self._tickets = tickets
         self._index = 0
 
     def __iter__(self):
-        self._index = 0
         return self
 
     def __next__(self) -> Ticket:
@@ -222,54 +227,56 @@ class PaidTicketIterator:
                 return ticket
         raise StopIteration
 
-    
 
-# 6. Клас-менеджер (Композиція)
+# 8. Клас-менеджер (Композиція)
 class CinemaManager:
-    """Містить колекцію квитків, композицію з функтором, кастомний ітератор та генератор."""
+    """Журнал усіх спроб бронювання. Містить функтор і віддає квитки ітератором та генератором."""
     def __init__(self):
         self.__tickets: list[Ticket] = []
-        self.pricing_functor = TicketPricingFunctor(service_fee=35.0) # Композиція функтора
+        self.pricing_functor = TicketPricingFunctor(SERVICE_FEE_RATE)
 
     def add_ticket(self, ticket: Ticket) -> None:
-        # 🔥 ВИКЛИК ФУНКТОРА: щоразу, коли квиток додається в менеджер,
-        # ми викликаємо функтор як функцію. Це автоматично збільшує 
-        # self.pricing_functor.usage_count на 1!
-        self.pricing_functor(ticket.base_price)
-        # Додаємо квиток до загального списку
         self.__tickets.append(ticket)
 
     def __len__(self) -> int:
         return len(self.__tickets)
 
     def __iter__(self):
-        """Використовуємо наш кастомний ітератор замість standard iter()."""
-        return PaidTicketIterator(self.__tickets)
+        """Усі записи від найдорожчих до найдешевших."""
+        return iter(sorted(self.__tickets, key=lambda t: t.calculate_final_price(), reverse=True))
 
-    def generate_tickets_by_pages(self, page_size: int = 2):
-        """Генератор (yield) для видачі квитків порціями (пагінація)."""
-        for i in range(0, len(self.__tickets), page_size):
-            yield self.__tickets[i:i + page_size]
+    def get_paid_tickets(self) -> PaidTicketIterator:
+        return PaidTicketIterator(list(self))
+
+    def generate_tickets_by_pages(self, page_size: int = 3):
+        """Генератор: видає оплачені квитки сторінками, не будуючи список сторінок наперед."""
+        if page_size <= 0:
+            raise ValueError("Розмір сторінки повинен бути більшим за 0!")
+        paid_tickets = self.get_paid_tickets()
+        while True:
+            page = list(islice(paid_tickets, page_size))
+            if not page:
+                return
+            yield page
 
     def show_sorted_archive(self) -> None:
         print("\n" + "#" * 55)
-        print("ARCHIVE: PAID TICKETS (CUSTOM ITERATOR)".center(55))
+        print("ARCHIVE: PAID TICKETS (HIGH -> LOW)".center(55))
         print("#" * 55)
-        if not self.__tickets:
-            print("Архів порожній. Ще не було оформлено жодного квитка.")
+        if not self:
+            print("Журнал порожній. Ще не було жодної спроби бронювання.")
             return
-        
-        # Перевірка роботи кастомного ітератора PaidTicketIterator
-        count = 0
-        for ticket in self:
-            count += 1
+        paid_count = 0
+        for ticket in self.get_paid_tickets():
+            paid_count += 1
             ticket.print_ticket_stub()
-            
-        print(f"\n[ІТЕРАТОР] Успішно відфільтровано та виведено оплачених квитків: {count}")
-        print(f"[ФУНКТОР] Сервісний функтор спрацьовував загалом разів: {self.pricing_functor.usage_count}")
+        print(f"\n[ІТЕРАТОР] Записів у журналі: {len(self)}, з них оплачених: {paid_count}")
+        print(f"[ФУНКТОР] Зборів нараховано: {self.pricing_functor.calls_count} разів, "
+              f"разом {self.pricing_functor.total_fees:.2f} UAH")
 
 
-def print_batch_receipt(movie: Movie, tickets: list[Ticket]) -> None:
+def print_batch_receipt(movie: Movie, tickets: list[Ticket], total_due: float) -> None:
+    subtotal = sum(tickets)
     print("\n" + "=" * 55)
     print("🎬 ФІНАЛЬНИЙ ЗВЕДЕНИЙ ЧЕК ЗАМОВЛЕННЯ 🎬".center(55))
     print("=" * 55)
@@ -278,7 +285,9 @@ def print_batch_receipt(movie: Movie, tickets: list[Ticket]) -> None:
     for ticket in tickets:
         print(f" {ticket}")
     print("-" * 55)
-    print(f" ЗАГАЛЬНА СУМА ДО СПЛАТИ: {sum(tickets):.2f} UAH")
+    print(f" Сума квитків    : {subtotal:.2f} UAH")
+    print(f" Сервісний збір  : {total_due - subtotal:.2f} UAH")
+    print(f" ЗАГАЛЬНА СУМА ДО СПЛАТИ: {total_due:.2f} UAH")
     print("=" * 55)
 
 
@@ -313,6 +322,21 @@ def create_movie() -> Movie:
 
     duration = int(input("Введіть тривалість фільму (хв): "))
     return Movie(title, genre, duration, hall)
+
+
+def choose_movie(current_movie: Optional[Movie]) -> Movie:
+    if current_movie is None:
+        return create_movie()
+
+    print(f"\n1. Продовжити замовлення на фільм «{current_movie.title}»")
+    print("2. Замовити квиток на новий фільм")
+    while True:
+        choice = input("Оберіть опцію (1-2): ").strip()
+        if choice == "1":
+            return current_movie
+        if choice == "2":
+            return create_movie()
+        print("[ПОМИЛКА] Невірний вибір. Введіть 1 або 2.")
 
 
 def create_ticket(choice: str, movie: Movie) -> Ticket:
@@ -358,18 +382,21 @@ def book_ticket(movie: Movie) -> Optional[Ticket]:
 
 def ticket_menu(movie: Movie, manager: CinemaManager) -> None:
     session_tickets = []
+    session_total = 0.0
 
     while True:
         try:
             ticket = book_ticket(movie)
             if ticket is None:
                 break
+            manager.add_ticket(ticket)
             if ticket.status == TicketStatus.PAID:
+                amount_due = manager.pricing_functor(ticket)
                 session_tickets.append(ticket)
-                manager.add_ticket(ticket)
-                print(f"[OK] Додано до замовлення: {ticket}")
+                session_total += amount_due
+                print(f"[OK] Додано до замовлення: {ticket} | З урахуванням збору: {amount_due:.2f} UAH")
             else:
-                print(f"[!] Квиток не додано до замовлення. Статус: {ticket.status.value}")
+                print(f"[!] Квиток не оплачено. Статус: {ticket.status.value}")
         except ValueError as e:
             print(f"\n[ПОМИЛКА ВАЛІДАЦІЇ] {e}")
 
@@ -377,10 +404,18 @@ def ticket_menu(movie: Movie, manager: CinemaManager) -> None:
             break
 
     if session_tickets:
-        print_batch_receipt(movie, session_tickets)
+        print_batch_receipt(movie, session_tickets, session_total)
         print("\nДякуємо за покупку! Приємного перегляду 🍿🎬")
     else:
-        print("\nЗамовлення завершено без квитків.")
+        print("\nЗамовлення завершено без оплачених квитків.")
+
+
+def show_ticket_pages(manager: CinemaManager) -> None:
+    page_size = int(input("Введіть розмір сторінки (квитків на сторінку): "))
+    for page_number, page in enumerate(manager.generate_tickets_by_pages(page_size), 1):
+        print(f"\n--- Сторінка {page_number} ---")
+        for ticket in page:
+            print(f"  > {ticket}")
 
 
 # --- Блок демонстрації (Main CLI) ---
@@ -394,34 +429,25 @@ if __name__ == "__main__":
         print("ГОЛОВНЕ МЕНЮ".center(40))
         print("=" * 40)
         print("1. Замовити квитки (Кошик клієнта)")
-        print("2. Переглянути архів (Кастомний ітератор + Функтор)")
-        print("3. Переглянути квитки сторінками (Генератор yield)")
+        print("2. Переглянути архів оплачених квитків (Ітератор + Функтор)")
+        print("3. Переглянути квитки сторінками (Генератор)")
         print("4. Вихід з програми")
 
         main_choice = input("Оберіть дію (1-4): ").strip()
 
         try:
             if main_choice == "1":
-                if current_movie is None:
-                    current_movie = create_movie()
+                current_movie = choose_movie(current_movie)
                 ticket_menu(current_movie, manager)
             elif main_choice == "2":
                 manager.show_sorted_archive()
             elif main_choice == "3":
-                print("\n--- Генератор: Посторінковий вивід квитків ---")
-                if len(manager) == 0:
-                    print("Архів порожній.")
-                else:
-                    page_size = int(input("Введіть розмір сторінки (скільки квитків на сторінку): "))
-                    for page_num, page_content in enumerate(manager.generate_tickets_by_pages(page_size), 1):
-                        print(f"\n--- Сторінка {page_num} ---")
-                        for t in page_content:
-                            print(f"  > {t}")
+                show_ticket_pages(manager)
             elif main_choice == "4":
                 print("\nРоботу системи завершено. До зустрічі! 👋")
                 break
             else:
-                print("[ПОМИЛКА] Невірний вибір. Будь ласка, введіть число від 1 до 3.")
+                print("[ПОМИЛКА] Невірний вибір. Будь ласка, введіть число від 1 до 4.")
         except ValueError as e:
             print(f"\n[ПОМИЛКА ВАЛІДАЦІЇ] {e}")
         except Exception as e:
