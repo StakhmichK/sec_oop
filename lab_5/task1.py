@@ -248,6 +248,7 @@ class CinemaManager:
     def get_paid_tickets(self) -> PaidTicketIterator:
         return PaidTicketIterator(list(self))
 
+
     def generate_tickets_by_pages(self, page_size: int = 3):
         """Генератор: видає оплачені квитки сторінками, не будуючи список сторінок наперед."""
         if page_size <= 0:
