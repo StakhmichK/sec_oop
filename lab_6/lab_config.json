@@ -1,0 +1,14 @@
+{
+    "cinema_name": "Cinema System CLI",
+    "booking_timeout_sec": 60,
+    "seats_per_row": 10,
+    "pricing": {
+        "service_fee_rate": 0.05,
+        "vip_multiplier": 1.5,
+        "student_discount": 0.7
+    },
+    "paths": {
+        "lab_data": "lab_data.pkl",
+        "lab_reports": "lab_reports.csv"
+    }
+}
